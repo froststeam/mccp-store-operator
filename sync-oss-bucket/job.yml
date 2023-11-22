@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: import-oss-data
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+      - name: sync-bucket
+        image: sh-harbor.mthreads.com/kubesphereio/sync-bucket:v1.0.0
+        imagePullPolicy: Always
+        command:
+        - /sync-bucket  
+        - --storeName=task1
+        - --endpoint=http://192.168.22.80:30547/
+        - --accesskey=openpitrixminioaccesskey
+        - --accesssecret=openpitrixminiosecretkey
+        - --bucket=mt-driver 
+        - --mountPath=/ceph/
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+            - name: volume-oan4ml
+              readOnly: false
+              mountPath: /ceph/
+      restartPolicy: Never
+      volumes:
+        - name: volume-oan4ml
+          persistentVolumeClaim:
+            claimName: cephpvc
