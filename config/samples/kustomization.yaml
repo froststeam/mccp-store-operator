@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- store.mccplatform_v1alpha1_sharestore.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples

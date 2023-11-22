@@ -1,0 +1,150 @@
+apiVersion: v1
+kind: Namespace
+metadata: 
+  name: mccp-store-operator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mccp-store-operator
+  namespace: mccp-store-operator
+  labels:
+    control-plane: mccp-store-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: mccp-store-operator
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        control-plane: mccp-store-operator
+    spec:
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: "node-role.kubernetes.io/master"
+                    operator: In
+                    values: [""]
+      containers:
+      - image: sh-harbor.mthreads.com/kubesphereio/mccp-store-operator:v1.0.0
+        imagePullPolicy: Always
+        name: mccp-store-operator
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+          - name: timezone
+            mountPath: /etc/localtime   
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      serviceAccount: mccp-store-operator
+      serviceAccountName: mccp-store-operator
+      terminationGracePeriodSeconds: 10
+      volumes:
+         - name: timezone
+           hostPath: 
+             path: /usr/share/zoneinfo/Asia/Shanghai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: mccp-store-operator
+  namespace: mccp-store-operator
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - mthreads.com
+  resources:
+  - sharestores
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - mthreads.com
+  resources:
+  - sharestores/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - mthreads.com
+  resources:
+  - sharestores/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mccp-store-operator
+  namespace: mccp-store-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mccp-store-operator-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mccp-store-operator
+subjects:
+- kind: ServiceAccount
+  name: mccp-store-operator
+  namespace: mccp-store-operator

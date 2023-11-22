@@ -1,0 +1,31 @@
+# apiVersion: store.mccplatform.mthreads.com/v1alpha1
+# kind: ShareStore
+# metadata:
+#   labels:
+#     app.kubernetes.io/name: sharestore
+#     app.kubernetes.io/instance: sharestore-sample
+#     app.kubernetes.io/part-of: mccp-store-operator1
+#     app.kubernetes.io/managed-by: kustomize
+#     app.kubernetes.io/created-by: mccp-store-operator1
+#   name: sharestore-sample
+# spec:
+#   # TODO(user): Add fields here
+
+
+
+apiVersion: store.mccplatform.mthreads.com/v1alpha1
+kind: ShareStore
+metadata:
+  name: test3
+  namespace: work1
+spec:
+    shareType: ReadWriteMany
+    storeCapacity: 1Gi
+    defaultMountPath: /mt/data
+    ossSpec:
+      endpoint: http://192.168.22.80:30547
+      bucketName: mt-driver
+      accesskey: openpitrixminioaccesskey
+      secretkey: openpitrixminiosecretkey
+      disableSSL: false
+      region: us-east-1
