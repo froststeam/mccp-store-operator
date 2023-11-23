@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	LoadingState   = "loading"   // The upload job is progressing
+	SyncingState   = "syncing"   // The upload job is progressing
 	CompletedState = "completed" // The upload task is successfully executed
 	FailedState    = "failed"    // The upload task failed to be executed
 )

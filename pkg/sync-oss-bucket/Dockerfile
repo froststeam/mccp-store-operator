@@ -6,6 +6,6 @@ COPY . .
 ENV CGO_ENABLED=0
 RUN go build
 
-FROM sh-harbor.mthreads.com/cloud/distroless/static:noroot
+FROM sh-harbor.mthreads.com/cloud/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /build/sync-bucket .

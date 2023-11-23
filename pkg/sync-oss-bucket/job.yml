@@ -13,13 +13,11 @@ spec:
         command:
         - /sync-bucket  
         - --storeName=task1
+        - --storeName=work1
         - --endpoint=http://192.168.22.80:30547/
         - --accesskey=openpitrixminioaccesskey
-        - --accesssecret=openpitrixminiosecretkey
+        - --secretkey=openpitrixminiosecretkey
         - --bucket=mt-driver 
-        - --mountPath=/ceph/
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
         volumeMounts:
             - name: volume-oan4ml
               readOnly: false
