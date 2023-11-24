@@ -1,4 +1,4 @@
-module mccp-store
+module mccp-store-operator
 
 go 1.20
 
