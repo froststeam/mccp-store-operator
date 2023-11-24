@@ -16,9 +16,11 @@
 apiVersion: store.mccplatform.mthreads.com/v1alpha1
 kind: ShareStore
 metadata:
-  name: test3
+  name: vega2
   namespace: work1
 spec:
+    image: sh-harbor.mthreads.com/kubesphereio/sync-bucket:v1.0.0
+    storageClassName: cephfs
     shareType: ReadWriteMany
     storeCapacity: 1Gi
     defaultMountPath: /mt/data

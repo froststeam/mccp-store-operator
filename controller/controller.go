@@ -51,6 +51,11 @@ type ShareStoreReconciler struct {
 	eventRecorder record.EventRecorder
 }
 
+const (
+	PvcOssFinalizerName = "pvc.oss.store.mccplatform.mthreads.com"
+	JobOssFinalizerName = "job.oss.store.mccplatform.mthreads.com"
+)
+
 func AddToManager(ctx context.Context, mgr ctrl.Manager) error {
 	var (
 		controlledType     = &mccpstorev1alpha1.ShareStore{}
@@ -59,6 +64,7 @@ func AddToManager(ctx context.Context, mgr ctrl.Manager) error {
 	r := &ShareStoreReconciler{
 		Client:        mgr.GetClient(),
 		Logger:        ctrl.Log.WithName("controllers").WithName(controlledTypeName),
+		Scheme:        mgr.GetScheme(),
 		eventRecorder: mgr.GetEventRecorderFor("mccp-store"),
 	}
 
@@ -87,24 +93,30 @@ func (r *ShareStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if !shareStore.DeletionTimestamp.IsZero() {
-		rrs, err := r.getRelatedResources(shareStore)
-		if err != nil {
-			r.Logger.Error(err, "failed to get shareStore related resources")
-			logEvent(r.eventRecorder, shareStore, v1.EventTypeWarning, "Delete", "failed to get shareStore related resources")
-		}
-
-		for _, rr := range rrs {
-			if !controllerutil.ContainsFinalizer(shareStore, rr) {
-				controllerutil.AddFinalizer(shareStore, rr)
-				if err := r.Update(context.Background(), shareStore); err != nil {
-					return ctrl.Result{}, err
-				}
+		if controllerutil.ContainsFinalizer(shareStore, PvcOssFinalizerName) {
+			pvc := GetCephfsPVC(shareStore)
+			err := r.Client.Delete(context.TODO(), pvc, &client.DeleteOptions{})
+			if err != nil {
+				r.Logger.Error(err, "failed to delete pvc", "name", pvc.Name, "namespace", pvc.Namespace)
+			} else {
+				r.Logger.Info("successfully delete pvc of shareStore", "name", pvc.Name, "namespace", pvc.Namespace)
 			}
-			if err := r.deleteRelatedResources(shareStore); err != nil {
+			controllerutil.RemoveFinalizer(shareStore, PvcOssFinalizerName)
+			if err := r.Update(ctx, shareStore); err != nil {
 				return ctrl.Result{}, err
 			}
-			controllerutil.RemoveFinalizer(shareStore, rr)
-			if err := r.Update(context.Background(), shareStore); err != nil {
+		}
+
+		if controllerutil.ContainsFinalizer(shareStore, JobOssFinalizerName) {
+			job := GetSyncBucketJob(shareStore)
+			err := r.Client.Delete(context.TODO(), job, &client.DeleteOptions{})
+			if err != nil {
+				r.Logger.Error(err, "failed to delete job", "name", job.Name, "namespace", job.Namespace)
+			} else {
+				r.Logger.Info("successfully delete job of shareStore", "name", job.Name, "namespace", job.Namespace)
+			}
+			controllerutil.RemoveFinalizer(shareStore, JobOssFinalizerName)
+			if err := r.Update(ctx, shareStore); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -132,6 +144,7 @@ func (r *ShareStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		r.Logger.Error(err, "failed to create cephfs pvc", "name", pvc.Name, "namespace", pvc.Namespace)
 		return ctrl.Result{}, err
 	}
+	r.addFinalizer(ctx, shareStore, PvcOssFinalizerName)
 	logEvent(r.eventRecorder, shareStore, v1.EventTypeNormal, "Create", "Success to create syncBucketJob"+" name "+pvc.Name+" namespace "+pvc.Namespace)
 	r.Logger.Info("successfully create cephfs pvc", "name", pvc.Name, "namespace", pvc.Namespace)
 
@@ -147,6 +160,7 @@ func (r *ShareStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 		return ctrl.Result{}, err
 	}
+	r.addFinalizer(ctx, shareStore, JobOssFinalizerName)
 	logEvent(r.eventRecorder, shareStore, v1.EventTypeNormal, "Create", "Success to create syncBucketJob"+" name "+syncBucketJob.Name+" namespace "+syncBucketJob.Namespace)
 	r.Logger.Info("successfully create syncBucketJob", "name", syncBucketJob.Name, "namespace", syncBucketJob.Namespace)
 
@@ -159,21 +173,14 @@ func logEvent(recorder record.EventRecorder, object runtime.Object, eventType st
 	}
 }
 
-func (r *ShareStoreReconciler) getRelatedResources(shareStore *mccpstorev1alpha1.ShareStore) ([]string, error) {
-	relatedResources := make([]string, 0)
-	pvc := &v1.PersistentVolumeClaim{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Namespace: shareStore.Namespace, Name: shareStore.Name}, pvc)
-	if err == nil && checkShareStoreOwner(pvc.OwnerReferences, shareStore) {
-		relatedResources = append(relatedResources, "pvc")
+func (r *ShareStoreReconciler) addFinalizer(ctx context.Context, shareStore *mccpstorev1alpha1.ShareStore, finalizerName string) error {
+	if !controllerutil.ContainsFinalizer(shareStore, finalizerName) {
+		controllerutil.AddFinalizer(shareStore, finalizerName)
+		if err := r.Update(ctx, shareStore); err != nil {
+			return err
+		}
 	}
-
-	job := &batchv1.Job{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Namespace: shareStore.Namespace, Name: shareStore.Name}, job)
-	if err == nil && checkShareStoreOwner(job.OwnerReferences, shareStore) {
-		relatedResources = append(relatedResources, "job")
-
-	}
-	return relatedResources, nil
+	return nil
 }
 
 func checkShareStoreOwner(ownerReferences []metav1.OwnerReference, shareStore *mccpstorev1alpha1.ShareStore) bool {
@@ -185,33 +192,6 @@ func checkShareStoreOwner(ownerReferences []metav1.OwnerReference, shareStore *m
 	return false
 }
 
-func (r *ShareStoreReconciler) deleteRelatedResources(shareStore *mccpstorev1alpha1.ShareStore) error {
-	var err error
-	rr := shareStore.Finalizers[len(shareStore.Finalizers)-1]
-
-	if rr == "pvc" {
-		pvc := GetCephfsPVC(shareStore)
-		err = r.Client.Delete(context.TODO(), pvc, &client.DeleteOptions{})
-		if err != nil {
-			r.Logger.Error(err, "failed to delete pvc", "name", pvc.Name, "namespace", pvc.Namespace)
-		} else {
-			r.Logger.Info("successfully delete pvc of shareStore", "name", pvc.Name, "namespace", pvc.Namespace)
-		}
-	}
-
-	if rr == "job" {
-		job := GetSyncBucketJob(shareStore)
-		err = r.Client.Delete(context.TODO(), job, &client.DeleteOptions{})
-		if err != nil {
-			r.Logger.Error(err, "failed to delete pvc", "name", job.Name, "namespace", job.Namespace)
-		} else {
-			r.Logger.Info("successfully delete pvc of shareStore", "name", job.Name, "namespace", job.Namespace)
-		}
-	}
-
-	return err
-}
-
 func (r *ShareStoreReconciler) predicate() predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
@@ -221,25 +201,7 @@ func (r *ShareStoreReconciler) predicate() predicate.Predicate {
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			shareStore := e.Object.(*mccpstorev1alpha1.ShareStore).DeepCopy()
-
-			pvc := GetCephfsPVC(shareStore)
-			sycnBucketJob := GetSyncBucketJob(shareStore)
-
-			err := r.Client.Delete(context.TODO(), pvc, &client.DeleteOptions{})
-			if err != nil {
-				r.Logger.Error(err, "failed to delete pvc", "name", pvc.Name, "namespace", pvc.Namespace)
-			} else {
-				r.Logger.Info("successfully delete pvc of shareStore", "name", pvc.Name, "namespace", pvc.Namespace)
-			}
-
-			err = r.Client.Delete(context.TODO(), sycnBucketJob, &client.DeleteOptions{})
-			if err != nil {
-				r.Logger.Error(err, "failed to delete sycnBucketJob", "name", sycnBucketJob.Name, "namespace", sycnBucketJob.Namespace)
-			} else {
-				r.Logger.Info("successfully delete pvc of shareStore", "name", sycnBucketJob.Name, "namespace", sycnBucketJob.Namespace)
-			}
-			return false
+			return true
 		},
 	}
 }
